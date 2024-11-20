@@ -1,86 +1,92 @@
 from multiversx_sdk import Address, ProxyNetworkProvider, ContractQuery
-import base64, struct
+import base64
 
+# Define Macros
 CONTRACT_ADDRESS = "erd1qqqqqqqqqqqqqpgqrqz7r8yl5dav2z0fgnn302l2w7xynygruvaq76m26j"
 PROXY_URL = "https://devnet-gateway.multiversx.com"
 provider = ProxyNetworkProvider(PROXY_URL)
 contract_address = Address.from_bech32(CONTRACT_ADDRESS)
+MY_NAME = "andrei_stefan.fotin"
 
-def parse_esdt_token_data(binary_data):
+# Enums for Class, Rarity, and Power
+CLASS_ENUM = [
+    "Warrior", "Mage", "Rogue", "Priest", "Hunter",
+    "Warlock", "Shaman", "Druid", "Paladin"
+]
+RARITY_ENUM = ["Common", "Rare", "Epic", "Legendary"]
+POWER_ENUM = ["Low", "Medium", "High"]
+
+def decode_object(data, offset, type):
+    # Calculate length
+    length = int.from_bytes(data[offset:offset + 4], byteorder="big")
+    offset += 4
+    # Get object value
+    object = data[offset:offset + length]
+    offset += length
+
+    if type == "number":
+        # If it's number (BigUInt)
+        return int.from_bytes(object, byteorder="big"), offset
+    elif type == "str":
+        # If it's string
+        return object.decode('utf-8', errors='ignore'), offset
+    elif type == "attributes":
+        object = object.hex()
+
+        return {
+            "class": int(object[0:2], 16),
+            "rarity": int(object[2:4], 16),
+            "power": int(object[4:6], 16),
+        }, offset
+
+def decode_esdt_token_data(data):
     offset = 0
 
-    # Token Type (Assuming 1 byte for simplicity)
-    token_type = struct.unpack_from('<B', binary_data, offset)[0]
+    # Decode token_type (1 byte)
+    token_type = data[offset]
     offset += 1
-    print(f"Token Type: {token_type}")
 
-    # Amount (BigUint, length-prefixed)
-    amount_length = struct.unpack_from('<I', binary_data, offset)[0]  # 4 bytes for length
-    offset += 4
-    amount = int.from_bytes(binary_data[offset:offset + amount_length], 'little')
-    offset += amount_length
-    print(f"Amount: {amount}")
+    # Decode amount (BigUint)
+    amount, offset = decode_object(data, offset, "number")
 
-    # Frozen (Boolean, 1 byte)
-    frozen = struct.unpack_from('<?', binary_data, offset)[0]
+    # Decode frozen (1 byte)
+    frozen = bool(data[offset])
     offset += 1
-    print(f"Frozen: {frozen}")
 
-    # Hash (Length-prefixed binary data)
-    hash_length = struct.unpack_from('<I', binary_data, offset)[0]
-    offset += 4
-    hash_data = binary_data[offset:offset + hash_length].hex()
-    offset += hash_length
-    print(f"Hash: {hash_data}")
+    # Decode hash (ManagedBuffer)
+    token_hash, offset = decode_object(data, offset, "str")
 
-    # Name (Length-prefixed string)
-    name_length = struct.unpack_from('<I', binary_data, offset)[0]
-    offset += 4
-    name = binary_data[offset:offset + name_length].decode('utf-8')
-    offset += name_length
-    print(f"Name: {name}")
+    # Decode name (ManagedBuffer)
+    name, offset = decode_object(data, offset, "str")
 
-    # Attributes (Length-prefixed binary data)
-    attr_length = struct.unpack_from('<I', binary_data, offset)[0]
-    offset += 4
-    attributes = binary_data[offset:offset + attr_length].hex()
-    offset += attr_length
-    print(f"Attributes: {attributes}")
+    # Decode attributes (ManagedBuffer)
+    attributes, offset = decode_object(data, offset, "attributes")
 
-    # Creator (Assuming 32 bytes for an address)
-    creator = binary_data[offset:offset + 32].hex()
+    # Decode creator (32 bytes)
+    creator = data[offset:offset + 32]
     offset += 32
-    print(f"Creator: {creator}")
 
-    # Royalties (BigUint, length-prefixed)
-    royalties_length = struct.unpack_from('<I', binary_data, offset)[0]
-    offset += 4
-    royalties = int.from_bytes(binary_data[offset:offset + royalties_length], 'little')
-    offset += royalties_length
-    print(f"Royalties: {royalties}")
+    # Decode royalties (BigUint)
+    royalties, offset = decode_object(data, offset, "number")
 
-    # URIs (ManagedVec: Count-prefixed list of length-prefixed strings)
-    uri_count = struct.unpack_from('<I', binary_data, offset)[0]
+    # Decode uris (ManagedVec<ManagedBuffer>)
+    uri_count = int.from_bytes(data[offset:offset + 4], byteorder="big")
     offset += 4
     uris = []
     for _ in range(uri_count):
-        uri_length = struct.unpack_from('<I', binary_data, offset)[0]
-        offset += 4
-        uri = binary_data[offset:offset + uri_length].decode('utf-8')
-        offset += uri_length
+        uri, offset = decode_object(data, offset, "str")
         uris.append(uri)
-    print(f"URIs: {uris}")
 
     return {
         "token_type": token_type,
         "amount": amount,
         "frozen": frozen,
-        "hash": hash_data,
+        "hash": token_hash,
         "name": name,
         "attributes": attributes,
-        "creator": creator,
+        "creator": creator.hex(),
         "royalties": royalties,
-        "uris": uris,
+        "uris": uris
     }
 
 def decode_nft_metadata(metadata_base64):
@@ -110,7 +116,7 @@ def decode_card_properties(card_base64):
         # Decode from base64
         card_bytes = base64.b64decode(card_base64)
         card_hex = card_bytes.hex()
-
+        
         # Each byte represents one property: class, rarity, power
         class_idx = int(card_hex[0:2], 16)
         rarity_idx = int(card_hex[2:4], 16)
@@ -160,10 +166,9 @@ def query_smart_contract_data():
         # Check if there is return data
         if result.return_data:
             nfts = []
-            print(base64.b64decode(result.return_data[0]),"\n\n", base64.b64decode(result.return_data[1]))
-            print('\n\n', parse_esdt_token_data(base64.b64decode(result.return_data[0])), '\n\n', parse_esdt_token_data(base64.b64decode(result.return_data[1])), '\n')
             for idx, metadata_base64 in enumerate(result.return_data, start=1):
-                nft_details = decode_nft_metadata(metadata_base64)
+                nft = base64.b64decode(metadata_base64)
+                nft_details = decode_esdt_token_data(nft)
                 if nft_details:
                     # Add nonce and details to the NFT
                     nft_details["nonce"] = idx  # Nonce is the 1-based index
@@ -177,13 +182,13 @@ def query_smart_contract_data():
 
 def find_first_matchy_nft(card_properties, available_nfts):
     for nft in available_nfts:
-        print(nft)
         # Check if all properties match
-        if (nft['rarity'] == card_properties['rarity'] and
-            nft['class'] == card_properties['class'] and
-            nft['power'] == card_properties['power']):
+        if (nft['attributes']['rarity'] == card_properties['rarity'] and
+            nft['attributes']['class'] == card_properties['class'] and
+            nft['attributes']['power'] == card_properties['power'] and
+            nft['name'] == 'BPDA-TRADING-CARD'):
             # If all properties match, return the NFT and its attributes
-            print("Found a matching NFT: ${nft}")
+            print("Found a matching NFT: ", nft)
             return nft
     
     print("No matching NFT found.")
@@ -219,7 +224,6 @@ def exchange_nft():
 # Call the functions
 card_properties = query_assigned_nft_properties()
 available_nfts = query_smart_contract_data()
-print(available_nfts)
 nft_to_exchange = find_first_matchy_nft(card_properties, available_nfts)
-#print(nft_to_exchange)
+print(nft_to_exchange)
 #exchange_nft()
