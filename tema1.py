@@ -7,6 +7,7 @@ PROXY_URL = "https://devnet-gateway.multiversx.com"
 provider = ProxyNetworkProvider(PROXY_URL)
 contract_address = Address.from_bech32(CONTRACT_ADDRESS)
 MY_NAME = "andrei_stefan.fotin"
+MY_WALLET = "erd15lv2d4z4rm36kz6eu46uahf9lq9c7akmemtvf5smjhz83ep3kx5sqwqcjg"
 
 # Enums for Class, Rarity, and Power
 CLASS_ENUM = [
@@ -194,6 +195,53 @@ def find_first_matchy_nft(card_properties, available_nfts):
     print("No matching NFT found.")
     return None
 
+def create_esdt_nft(nft_to_exchange):
+    try:
+        # Replace these with your desired NFT details
+        nft_collection_name = "MYNFTCOLL-123456"  # Your ESDT NFT collection token identifier
+        quantity = 1  # Number of NFTs to mint
+        attributes = {
+           "rarity": nft_to_exchange['attributes']['rarity'],
+           "class": nft_to_exchange['attributes']['class'],
+           "power": nft_to_exchange['attributes']['power'],
+        }
+        uri = "https://i.ytimg.com/vi/h4vmWLMoCKg/hqdefault.jpg"
+        nft_name = MY_NAME
+
+        # Prepare the arguments for ESDTNFTCreate
+        encoded_arguments = [
+            nft_collection_name.encode("utf-8"),
+            str(quantity).encode("utf-8"),
+            nft_name.encode("utf-8"),
+            attributes.encode("utf-8"),
+            uri.encode("utf-8")
+        ]
+
+        # Create the transaction
+        transaction = ESDTNFTCreateTransaction(
+            sender=MY_WALLET,
+            receiver=MY_WALLET,  # Typically your wallet or the destination of the NFT
+            gas_limit=5000000,  # Set an appropriate gas limit
+            value="0",  # No EGLD needed; it's an NFT creation transaction
+            encoded_arguments=encoded_arguments
+        )
+
+        # Sign the transaction
+        signed_transaction = transaction.sign(wallet_private_key)
+
+        # Send the transaction
+        result = provider.send_transaction(signed_transaction)
+
+        # Check transaction results
+        if result.success:
+            print(f"NFT created successfully! Transaction Hash: {result.transaction_hash}")
+        else:
+            print("Failed to create NFT. Error:", result.error)
+
+    except Exception as e:
+        print(f"An error occurred while creating the NFT: {e}")
+
+
 def exchange_nft():
     try:
         # Create and execute a contract query
@@ -225,5 +273,4 @@ def exchange_nft():
 card_properties = query_assigned_nft_properties()
 available_nfts = query_smart_contract_data()
 nft_to_exchange = find_first_matchy_nft(card_properties, available_nfts)
-print(nft_to_exchange)
-#exchange_nft()
+exchange_nft(nft_to_exchange)
